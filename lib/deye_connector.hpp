@@ -437,15 +437,15 @@ namespace connector_error {
 			case codes::RESPONSE_WRONG_REGISTER_COUNT:
 				return "Returned register count does not match sent value.";
 			case codes::NUM_SENSORS_VALUES_MISMATCH:
-			    return "Size of given value range does not match number of given sensor types.";
+				return "Size of given value range does not match number of given sensor types.";
 			case codes::UNKNOWN_SENSOR:
-			    return "Unknown sensor enum value.";
+				return "Unknown sensor enum value.";
 			case codes::UNKNWON_UNIT:
-			    return "Unknown unit enum value.";
+				return "Unknown unit enum value.";
 			case codes::INTERNAL_ERROR:
-			    return "Internal error";
+				return "Internal error";
 			default:
-			    using namespace std::string_literals;
+				using namespace std::string_literals;
 				return "unrecognized error ("s + std::to_string(ev) + ")";
 			}
 		}
@@ -516,7 +516,7 @@ std::error_code connector::send_modbus_frame(size_t dataSize, F&& writeRequest) 
 
 	m_buffer.resize(frameSize);
 
-    {
+	{
 		auto it = m_buffer.begin();
 		
 		using namespace bytes;
@@ -580,7 +580,7 @@ std::error_code connector::receive_modbus_frame(F&& readResponse) {
 
 	const auto returnedSerialNumber = bytes::to<uint32_t, bytes::endianness::LITTLE>(&m_buffer[7]);
 	if (returnedSerialNumber != m_serial_number) {
-	    //std::cout << m_serial_number << ' ' << returnedSerialNumber << std::endl;
+		//std::cout << m_serial_number << ' ' << returnedSerialNumber << std::endl;
 		return make_error_code(connector_error::codes::DEVICE_ADDRESS_MISMATCH);
 	}
 
@@ -662,7 +662,7 @@ std::error_code connector::read_registers(uint16_t begin_address, uint16_t regis
 	};
 
 	const auto readResponse = [&](std::span<uint8_t> res) {
-	    
+		
 		const auto data = std::span{ res.begin(), res.end() - sizeof(uint16_t) }; // crc is not part of data
 
 #ifdef DEYE_REDUNDANT_ERROR_CHECKS
@@ -718,18 +718,18 @@ std::error_code connector::write_registers(uint16_t begin_address, std::span<con
 		const auto expected_crc = modbus::crc(std::span{ res.begin(), crcBegin });
 		const auto actual_crc = bytes::to<uint16_t, bytes::endianness::LITTLE>(crcBegin);
 		
-        if (actual_crc != expected_crc)
+		if (actual_crc != expected_crc)
 			return make_error_code(connector_error::codes::RESPONSE_WRONG_CRC);
 #endif
 
-        const auto returned_address = bytes::to<uint16_t, bytes::endianness::BIG>(&res[2]);
+		const auto returned_address = bytes::to<uint16_t, bytes::endianness::BIG>(&res[2]);
 		const auto returned_count = bytes::to<uint16_t, bytes::endianness::BIG>(&res[4]);
 
-        if (returned_address != begin_address)
+		if (returned_address != begin_address)
 			return make_error_code(connector_error::codes::RESPONSE_WRONG_ADDRESS);
 
-        if (returned_count != values.size())
-            return make_error_code(connector_error::codes::RESPONSE_WRONG_REGISTER_COUNT);
+		if (returned_count != values.size())
+			return make_error_code(connector_error::codes::RESPONSE_WRONG_REGISTER_COUNT);
 
 		return make_error_code(connector_error::codes::OK);
 	};
@@ -785,7 +785,7 @@ std::error_code connector::read_sensors(std::span<const sensor_types> types, std
 	if (const auto error = read_registers(begin_address, num_registers, registers); error)
 		return error;
 		
-    const auto type_size = (ssize_t)types.size();
+	const auto type_size = (ssize_t)types.size();
 	for (ssize_t i = 0; i < type_size; i++) {
 		const auto sensor = *sensor::of(types[i]);
 		const auto registerIndex = sensor.begin_address() - begin_address;

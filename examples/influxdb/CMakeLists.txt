@@ -18,11 +18,11 @@ include_directories(asio INTERFACE ${boost_asio_SOURCE_DIR}/include)
 
 # Influx-cxx sometimes failes to set the input path.
 # You might have to manually find the include directory and modify the next line.
-#target_include_directories(deye_influxdb_example PRIVATE "/usr/include/influxdb-cxx")
+# target_include_directories(deye_influxdb_example PRIVATE "/usr/include/influxdb-cxx")
 
 target_link_libraries(deye_influxdb_example PRIVATE
-    InfluxData::InfluxDB
-    Boost::system
+	InfluxData::InfluxDB
+	Boost::system
 )
 
 get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)

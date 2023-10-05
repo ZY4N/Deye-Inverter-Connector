@@ -7,7 +7,7 @@ socket_connection::socket_connection() :
 	ctx{ }, socket{ ctx } {};
 
 std::error_code socket_connection::connect(const std::string_view &host, const uint16_t port) {
-    using namespace std::chrono_literals;
+	using namespace std::chrono_literals;
 	boost::system::error_code error; 
 
 	const auto ip = asio::ip::address::from_string(host.data(), error);
@@ -38,14 +38,14 @@ std::error_code socket_connection::receive(std::span<uint8_t> data) {
 }
 
 std::error_code socket_connection::disconnect() {
-    boost::system::error_code error;
-    socket.shutdown(asio::ip::tcp::socket::shutdown_both, error);
-    if (error) return error;
-    socket.close();
-    ctx.stop();
-    return error;
+	boost::system::error_code error;
+	socket.shutdown(asio::ip::tcp::socket::shutdown_both, error);
+	if (error) return error;
+	socket.close();
+	ctx.stop();
+	return error;
 }
 
 socket_connection::~socket_connection() {
-    [[maybe_unused]] const auto error = disconnect();
+	[[maybe_unused]] const auto error = disconnect();
 }

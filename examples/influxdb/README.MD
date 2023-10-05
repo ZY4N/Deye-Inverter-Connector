@@ -8,8 +8,8 @@ Make sure that [Boost](https://www.boost.org/) with the development headers, [In
 Before building some variables at the beginning of `main.cpp` need to be changed to match your setup:
 
 | variable      | Explanation                         | Source     |
-| ------------- | ----------------------------------- |-------|
-| ip            | The inverters local IP address       | Scan network for new IPs or check your routers web interface.  |
+| ------------- | ----------------------------------- | ---------- |
+| ip            | The inverters local IP address      | Scan network for new IPs or check your routers web interface.  |
 | port          | The inverters port                  | The port should usually be 8899. |
 | serial_number | The inverters unique serial number  | Can be found on the back of the inverter or on the inverters web interface.
 | influxdb_url | The url of your influx database dataset | The databse will be created if it doesn't already exist. |
