@@ -15,7 +15,10 @@ find_package(Boost REQUIRED COMPONENTS system)
 
 set(BOOST_ENABLE_CMAKE ON)
 include_directories(asio INTERFACE ${boost_asio_SOURCE_DIR}/include)
-target_include_directories(deye_influxdb_example PRIVATE "/usr/include/influxdb-cxx")
+
+# Influx-cxx sometimes failes to set the input path.
+# You might have to manually find the include directory and modify the next line.
+#target_include_directories(deye_influxdb_example PRIVATE "/usr/include/influxdb-cxx")
 
 target_link_libraries(deye_influxdb_example PRIVATE
     InfluxData::InfluxDB
