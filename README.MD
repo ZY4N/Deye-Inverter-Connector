@@ -1,7 +1,7 @@
 # Deye Connector
-This Header Only* C++20 library provides a simple interface to get data from your deye solar inverter like the .
+This Header Only* C++20 library provides a simple interface to communicate with deye solar inverters.
 
-*The library needs a socket_connection class to keep it platform independent. This way the provided Boost implementation can be replaced with another library for use on microcontrollers like the esp32.
+*The library needs a socket_connection class to keep it platform independent. This way the provided Boost implementation can be replaced with another library for example to be used on microcontrollers like the esp32.
 
 ```c++
 #include <deye_connector.hpp>
