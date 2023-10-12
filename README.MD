@@ -1,16 +1,17 @@
 # Deye Inverter Connector
 This Header Only* C++20 library provides a simple interface to communicate with deye solar inverters.
 
-*The library needs a socket_connection class to keep it platform independent. This way the provided Boost implementation can be replaced with another library for example to be used on microcontrollers like the esp32.
+*The library relies on an external tcp socket class to keep it platform independent. There are two tcp socket implementations provided, one using boost for desktop PCs/servers and another using lwIP for microcontrollers.
 
 ```c++
 #include <deye_connector.hpp>
+#include <asio_tcp_socket.hpp>
 #include <array>
 #include <iostream>
 
-static constexpr char* ip = "INVERTER_IP";
+static constexpr char ip[] = "1.1.1.1";
 static constexpr uint16_t port = 8899;
-static constexpr uint32_t serial_number = INVERTER_SERIAL_NUMBER;
+static constexpr uint32_t serial_number = 123456;
 
 int main() {
 	constexpr auto my_sensors = std::array{
@@ -23,7 +24,7 @@ int main() {
 	std::array<double, my_sensors.size()> values{};
 	std::error_code error;
 
-	deye::connector connector(serial_number);
+	deye::connector<asio_tcp_socket> connector(serial_number);
 
 	if ((error = connector.connect(ip, port))) {
 		std::cout << "Error while connecting: " << error.message() << std::endl;
@@ -37,10 +38,11 @@ int main() {
 
 	for (size_t i = 0; i < values.size(); i++) {
 		const auto my_sensor = deye::sensor::of(my_sensors[i]);
+		assert(my_sensor != nullptr);
 		std::cout <<
 			my_sensor->name() << " (" << my_sensor->unit() << "): "
 			<< values[i] << ' ' << my_sensor->symbol()
 		<< std::endl;
 	}
 }
-```
+

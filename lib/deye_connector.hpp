@@ -1,7 +1,5 @@
 #pragma once
 
-#include <socket_connection.hpp>
-
 #include <system_error>
 #include <cstdint>
 #include <string>
@@ -11,6 +9,7 @@
 
 #include <algorithm>
 #include <numeric>
+#include <ratio>
 
 // The deye modbus protocoll sends two checksums on top of the TCP connection.
 // Since TCP has it's own error correction these checksums don't need to be checked
@@ -22,15 +21,92 @@ namespace deye {
 //====================[ interface ]====================//
 
 
+//--------------[ tcp socket interface ]--------------//
+
+namespace tcp_socket_concepts {
+
+	template<class T>
+	concept constructor = std::is_default_constructible_v<T>;
+
+	template<class T>
+	concept listen = requires(T socket, uint16_t port) {
+		/**
+		 * @brief accepts tcp connection on given port, blocks until socket connected or error occured.
+		 *
+		 * @param port The port to await the connection on.
+		 *
+		 * @return An 'std::error_code' that indicates the status of the operation.
+		 */
+		{ socket.listen(port) } -> std::same_as<std::error_code>;
+	};
+
+	template<class T>
+	concept connect = requires(T socket, const char* host, uint16_t port) {
+		/**
+		 * @brief connects socket to given host and port, only returns when socket connected or error occured.
+		 * 
+		 * @param host The host IPv4 address to connect to.
+		 * @param port The host port to connect to.
+		 *
+		 * @return An 'std::error_code' that indicates the status of the operation.
+		 */
+		{ socket.connect(host, port) } -> std::same_as<std::error_code>;
+	};
+
+	template<class T>
+	concept send = requires(T socket, std::span<const uint8_t> data) {
+		/**
+		 * @brief Sends data over a connected tcp socket, blocking until data.size() bytes are sent.
+		 *
+		 * @param data The data to be sent, represented as a span of unsigned 8-bit integers.
+		 *
+		 * @return An 'std::error_code' that indicates the status of the operation.
+		 */
+		{ socket.send(data) } -> std::same_as<std::error_code>;
+	};
+
+	template<class T>
+	concept receive = requires(T socket, std::span<uint8_t> data) {
+		/**
+		 * @brief Receives data from a connected socket, blocking untill data.size() bytes are received.
+		 *
+		 * @param buffer The buffer to store the received data in, represented as a span of unsigned 8-bit integers.
+		 *
+		 * @return An 'std::error_code' that indicates the status of the operation.
+		 */
+		{ socket.receive(data) } -> std::same_as<std::error_code>;
+	};
+
+	template<class T>
+	concept disconnect = requires(T socket) {
+		/**
+		 * @brief Shuts down both reading and writing channels and closes the socket.
+		*/
+		{ socket.disconnect() } -> std::same_as<std::error_code>;
+	};
+}
+
+
+template<class T>
+concept tcp_socket = (
+	tcp_socket_concepts::constructor<T> and
+	tcp_socket_concepts::connect<T> and
+	tcp_socket_concepts::send<T> and
+	tcp_socket_concepts::receive<T> and
+	tcp_socket_concepts::disconnect<T>
+);
+
+
 //--------------[ connector interface ]--------------//
 
 enum class sensor_types : uint8_t;
 
+template<tcp_socket Socket>
 class connector {
 public:
 	connector(uint32_t n_serial_number);
 
-	[[nodiscard]] inline std::error_code connect(const std::string_view& host, uint16_t port);
+	[[nodiscard]] inline std::error_code connect(const char* host, uint16_t port);
 
 	[[nodiscard]] inline std::error_code read_sensor(sensor_types type, double &value);
 
@@ -48,16 +124,16 @@ protected:
 
 private:
 	template<class F, class G>
-	[[nodiscard]] inline std::error_code modbus_request(size_t dataSize, F&& writeRequest, G&& readResponse);
+	[[nodiscard]] inline std::error_code modbus_request(size_t data_size, F&& write_request, G&& read_request);
 
 	template<class F>
-	[[nodiscard]] inline std::error_code send_modbus_frame(size_t dataSize, F&& writeRequest);
+	[[nodiscard]] inline std::error_code send_modbus_frame(size_t data_size, F&& write_request);
 
 	template<class F>
-	[[nodiscard]] inline std::error_code receive_modbus_frame(F&& readResponse);
+	[[nodiscard]] inline std::error_code receive_modbus_frame(F&& read_request);
 
 private:
-	socket_connection m_conn{};
+	Socket m_socket{};
 	std::vector<uint8_t> m_buffer{};
 	uint32_t m_serial_number{};
 };
@@ -196,13 +272,13 @@ namespace bytes {
 		BIG, LITTLE
 	};
 
-	static inline size_t ignoreNumBytes = 0;
+	static inline size_t ignore_num_bytes = 0;
 
 	template<typename T, endianness Endian = endianness::BIG, class OutputIt>
 	inline size_t from(const auto &value, OutputIt &dst);
 
 	template<typename T, endianness Endian = endianness::BIG, class InputIt>
-	inline T to(InputIt src, size_t &numBytes = ignoreNumBytes);
+	inline T to(InputIt src, size_t &num_bytes = ignore_num_bytes);
 };
 
 
@@ -225,10 +301,10 @@ namespace bytes {
 
 	template<typename T, endianness Endian, class OutputIt>
 	size_t from(const auto &value, OutputIt &dst) {
-		size_t numBytes = 0;
+		size_t num_bytes = 0;
 		if constexpr (detail::is_container<decltype(value), const T>::value) {	
 			for (const auto &element : value) {
-				numBytes += from<T, Endian>(element, dst);
+				num_bytes += from<T, Endian>(element, dst);
 			}
 		} else {
 			const auto t_value = static_cast<T>(value);
@@ -241,18 +317,18 @@ namespace bytes {
 			} else {
 				std::copy(bytes.begin(), bytes.end(), dst);
 			}
-			dst += numBytes = sizeof(T);
+			dst += num_bytes = sizeof(T);
 		}
 
-		return numBytes;
+		return num_bytes;
 	}
 
 
 	template<typename T, endianness Endian, class InputIt>
-	T to(InputIt src, size_t &numBytes) {
+	T to(InputIt src, size_t &num_bytes) {
 		T value;
 		
-		numBytes = sizeof(T);
+		num_bytes = sizeof(T);
 
 		auto &dst = *reinterpret_cast<std::array<uint8_t, sizeof(T)>*>(&value);
 
@@ -473,48 +549,52 @@ struct std::is_error_code_enum<deye::connector_error::codes> : public std::true_
 
 namespace deye {
 
-connector::connector(uint32_t n_serial_number) :
+template<tcp_socket Socket>
+connector<Socket>::connector(uint32_t n_serial_number) :
 	m_serial_number{ n_serial_number } {}
 
-
-std::error_code connector::connect(const std::string_view &host, const uint16_t port) {
-	return m_conn.connect(host, port);
+template<tcp_socket Socket>
+std::error_code connector<Socket>::connect(const char* host, const uint16_t port) {
+	return m_socket.connect(host, port);
 }
 
-std::error_code connector::disconnect() {
-	return m_conn.disconnect();
+template<tcp_socket Socket>
+std::error_code connector<Socket>::disconnect() {
+	return m_socket.disconnect();
 }
 
-uint32_t &connector::serial_number() {
+template<tcp_socket Socket>
+uint32_t &connector<Socket>::serial_number() {
 	return m_serial_number;
 }
 
-const uint32_t &connector::serial_number() const {
+template<tcp_socket Socket>
+const uint32_t &connector<Socket>::serial_number() const {
 	return m_serial_number;
 }
 
-
+template<tcp_socket Socket>
 template<class F>
-std::error_code connector::send_modbus_frame(size_t dataSize, F&& writeRequest) {
+std::error_code connector<Socket>::send_modbus_frame(size_t data_size, F&& write_request) {
 	
-	const auto payloadSize = (
+	const auto payload_size = (
 		15			+		// data field
-		dataSize	+		// data
+		data_size	+		// data
 		sizeof(uint16_t) 	// crc
 	);
 	
-	const auto frameSize = (
+	const auto frame_size = (
 		sizeof(uint8_t)		+	// start byte
 		sizeof(uint16_t)	+	// payload length
 		sizeof(uint16_t)	+	// control code
 		sizeof(uint16_t)	+	// inverter serial number prefix
 		sizeof(uint32_t)	+	// serial number
-		payloadSize 		+	// payload
+		payload_size 		+	// payload
 		sizeof(uint8_t)		+	// checksum
 		sizeof(uint8_t)			// end byte 
 	);
 
-	m_buffer.resize(frameSize);
+	m_buffer.resize(frame_size);
 
 	{
 		auto it = m_buffer.begin();
@@ -522,7 +602,7 @@ std::error_code connector::send_modbus_frame(size_t dataSize, F&& writeRequest) 
 		using namespace bytes;
 
 		from<uint8_t,  endianness::BIG   >(0xa5,			it); // start byte
-		from<uint16_t, endianness::LITTLE>(payloadSize,		it); // payload size
+		from<uint16_t, endianness::LITTLE>(payload_size,	it); // payload size
 		from<uint16_t, endianness::LITTLE>(0x4510,			it); // control code
 		from<uint16_t, endianness::LITTLE>(0x0000,			it); // inverter_sn_prefix
 		from<uint32_t, endianness::LITTLE>(m_serial_number,	it); // serial number
@@ -531,11 +611,11 @@ std::error_code connector::send_modbus_frame(size_t dataSize, F&& writeRequest) 
 		from<uint32_t, endianness::LITTLE>(0x0000,			it); // "
 		from<uint64_t, endianness::LITTLE>(0x00000000,		it); // "
 
-		auto data = std::span{ it, dataSize };
-		if (const auto error = writeRequest(data); error) {
+		auto data = std::span{ it, data_size };
+		if (const auto error = write_request(data); error) {
 			return error;
 		}
-		it += dataSize;
+		it += data_size;
 
 		const auto crc = modbus::crc(data);
 		from<uint16_t, endianness::LITTLE>(crc,				it); // crc
@@ -546,12 +626,12 @@ std::error_code connector::send_modbus_frame(size_t dataSize, F&& writeRequest) 
 	}
 
 
-	return m_conn.send(m_buffer);
+	return m_socket.send(m_buffer);
 }
 
-
+template<tcp_socket Socket>
 template<class F>
-std::error_code connector::receive_modbus_frame(F&& readResponse) {
+std::error_code connector<Socket>::receive_modbus_frame(F&& read_request) {
 	
 	using connector_error::make_error_code;
 
@@ -559,7 +639,7 @@ std::error_code connector::receive_modbus_frame(F&& readResponse) {
 
 	//-------------[ receive header ]-------------//
 	
-	constexpr auto headerSize = (
+	constexpr auto header_size = (
 		sizeof(uint8_t)  + // start byte
 		sizeof(uint16_t) + // data length
 		sizeof(uint16_t) + // control code 
@@ -567,8 +647,8 @@ std::error_code connector::receive_modbus_frame(F&& readResponse) {
 		sizeof(uint32_t)   // serial number
 	);
 	
-	m_buffer.resize(headerSize);
-	if ((error = m_conn.receive(m_buffer)))
+	m_buffer.resize(header_size);
+	if ((error = m_socket.receive(m_buffer)))
 		return error;
 
 
@@ -578,29 +658,29 @@ std::error_code connector::receive_modbus_frame(F&& readResponse) {
 		return make_error_code(connector_error::codes::RESPONSE_INVALID_START);
 
 
-	const auto returnedSerialNumber = bytes::to<uint32_t, bytes::endianness::LITTLE>(&m_buffer[7]);
-	if (returnedSerialNumber != m_serial_number) {
-		//std::cout << m_serial_number << ' ' << returnedSerialNumber << std::endl;
+	const auto returned_serial_number = bytes::to<uint32_t, bytes::endianness::LITTLE>(&m_buffer[7]);
+	if (returned_serial_number != m_serial_number) {
+		// std::cout << m_serial_number << ' ' << returned_serial_number << std::endl;
 		return make_error_code(connector_error::codes::DEVICE_ADDRESS_MISMATCH);
 	}
 
-	const auto dataLength = bytes::to<uint16_t, bytes::endianness::LITTLE>(&m_buffer[1]);
+	const auto data_size = bytes::to<uint16_t, bytes::endianness::LITTLE>(&m_buffer[1]);
 
 
 	//-------------[ receive body ]-------------//
 
-	const auto bodySize = (
-		dataLength + // payload
+	const auto body_size = (
+		data_size + // payload
 		sizeof(uint8_t) + // checksum
 		sizeof(uint8_t)   // end byte
 	);
 
-	m_buffer.resize(headerSize + bodySize);
+	m_buffer.resize(header_size + body_size);
 
-	auto header = std::span{ m_buffer.begin(), headerSize };
-	auto body   = std::span{ header.end()  , bodySize   };
+	auto header = std::span{ m_buffer.begin(), header_size };
+	auto body   = std::span{ header.end(), body_size };
 
-	if ((error = m_conn.receive(body)))
+	if ((error = m_socket.receive(body)))
 		return error;
 
 
@@ -628,29 +708,31 @@ std::error_code connector::receive_modbus_frame(F&& readResponse) {
 		return make_error_code(connector_error::codes::RESPONSE_WRONG_CRC);
 #endif
 
-	return readResponse({ m_buffer.begin() + 25, m_buffer.end() - 2 });
+	return read_request({ m_buffer.begin() + 25, m_buffer.end() - 2 });
 }
 
 
+template<tcp_socket Socket>
 template<class F, class G>
-std::error_code connector::modbus_request(size_t dataSize, F&& writeRequest, G&& readResponse) {
+std::error_code connector<Socket>::modbus_request(size_t data_size, F&& write_request, G&& read_request) {
 	std::error_code error;
 	(
-		(error = send_modbus_frame(dataSize, std::forward<F>(writeRequest))) or
-		(error = receive_modbus_frame(std::forward<G>(readResponse)))
+		(error = send_modbus_frame(data_size, std::forward<F>(write_request))) or
+		(error = receive_modbus_frame(std::forward<G>(read_request)))
 	);
 	return error;
 }
 
-std::error_code connector::read_registers(uint16_t begin_address, uint16_t register_count, std::span<uint16_t> &registers) {
+template<tcp_socket Socket>
+std::error_code connector<Socket>::read_registers(uint16_t begin_address, uint16_t register_count, std::span<uint16_t> &registers) {
 
 	using connector_error::make_error_code;
 
-	const auto requestSize = 3 * sizeof(uint16_t);
+	const auto request_size = 3 * sizeof(uint16_t);
 
-	const auto writeRequest = [&](std::span<uint8_t> req) {
+	const auto write_request = [&](std::span<uint8_t> req) -> std::error_code {
 
-		if (req.size() != requestSize)
+		if (req.size() != request_size)
 			return make_error_code(connector_error::codes::INTERNAL_ERROR);
 
 		auto it = req.data();
@@ -658,10 +740,10 @@ std::error_code connector::read_registers(uint16_t begin_address, uint16_t regis
 		bytes::from<uint16_t>(begin_address, it);
 		bytes::from<uint16_t>(register_count, it);
 
-		return make_error_code(connector_error::codes::OK);
+		return {};
 	};
 
-	const auto readResponse = [&](std::span<uint8_t> res) {
+	const auto read_request = [&](std::span<uint8_t> res) -> std::error_code {
 		
 		const auto data = std::span{ res.begin(), res.end() - sizeof(uint16_t) }; // crc is not part of data
 
@@ -679,26 +761,26 @@ std::error_code connector::read_registers(uint16_t begin_address, uint16_t regis
 		if (reg_count_byte < register_count)
 			return make_error_code(connector_error::codes::RESPONSE_WRONG_REGISTER_COUNT);
 
-		auto registerBegin = reinterpret_cast<uint16_t*>(data.data() + 3);
-		registers = { registerBegin, register_count };
+		auto register_begin = reinterpret_cast<uint16_t*>(data.data() + 3);
+		registers = { register_begin, register_count };
 
-		return make_error_code(connector_error::codes::OK);
+		return {};
 	};
 
 
-	return modbus_request(requestSize, writeRequest, readResponse);
+	return modbus_request(request_size, write_request, read_request);
 }
 
-
-std::error_code connector::write_registers(uint16_t begin_address, std::span<const uint8_t> values) {
+template<tcp_socket Socket>
+std::error_code connector<Socket>::write_registers(uint16_t begin_address, std::span<const uint8_t> values) {
 
 	using connector_error::make_error_code;
 
-	const auto requestSize = 7 + values.size() * sizeof(uint16_t);
+	const auto request_size = 7 + values.size() * sizeof(uint16_t);
 
-	const auto writeRequest = [&](std::span<uint8_t> req) -> std::error_code {
+	const auto write_request = [&](std::span<uint8_t> req) -> std::error_code {
 
-		if (req.size() != requestSize)
+		if (req.size() != request_size)
 			return make_error_code(connector_error::codes::INTERNAL_ERROR);
 
 		auto it = req.data();
@@ -708,15 +790,15 @@ std::error_code connector::write_registers(uint16_t begin_address, std::span<con
 		bytes::from<uint8_t>(values.size() * sizeof(uint16_t), it);
 		bytes::from<uint16_t>(values, it);
 		
-		return make_error_code(connector_error::codes::OK);
+		return {};
 	};
 
-	const auto readResponse = [&](std::span<uint8_t> res) {
+	const auto read_request = [&](std::span<uint8_t> res) {
 
 #ifdef DEYE_REDUNDANT_ERROR_CHECKS
-		const auto crcBegin = res.end() - sizeof(uint16_t);
-		const auto expected_crc = modbus::crc(std::span{ res.begin(), crcBegin });
-		const auto actual_crc = bytes::to<uint16_t, bytes::endianness::LITTLE>(crcBegin);
+		const auto crc_begin = res.end() - sizeof(uint16_t);
+		const auto expected_crc = modbus::crc(std::span{ res.begin(), crc_begin });
+		const auto actual_crc = bytes::to<uint16_t, bytes::endianness::LITTLE>(crc_begin);
 		
 		if (actual_crc != expected_crc)
 			return make_error_code(connector_error::codes::RESPONSE_WRONG_CRC);
@@ -731,15 +813,15 @@ std::error_code connector::write_registers(uint16_t begin_address, std::span<con
 		if (returned_count != values.size())
 			return make_error_code(connector_error::codes::RESPONSE_WRONG_REGISTER_COUNT);
 
-		return make_error_code(connector_error::codes::OK);
+		return {};
 	};
 
 
-	return modbus_request(requestSize, writeRequest, readResponse);
+	return modbus_request(request_size, write_request, read_request);
 }
 
-
-[[nodiscard]] std::error_code connector::read_sensor(const sensor_types type, double &value) {
+template<tcp_socket Socket>
+[[nodiscard]] std::error_code connector<Socket>::read_sensor(const sensor_types type, double &value) {
 
 	using connector_error::make_error_code;
 
@@ -756,11 +838,11 @@ std::error_code connector::write_registers(uint16_t begin_address, std::span<con
 
 	value = sensor->read(registers);
 
-	return make_error_code(connector_error::codes::OK);
+	return {};
 }
 
-
-std::error_code connector::read_sensors(std::span<const sensor_types> types, std::span<double> values) {
+template<tcp_socket Socket>
+std::error_code connector<Socket>::read_sensors(std::span<const sensor_types> types, std::span<double> values) {
 
 	using connector_error::make_error_code;
 
@@ -788,13 +870,13 @@ std::error_code connector::read_sensors(std::span<const sensor_types> types, std
 	const auto type_size = (ssize_t)types.size();
 	for (ssize_t i = 0; i < type_size; i++) {
 		const auto sensor = *sensor::of(types[i]);
-		const auto registerIndex = sensor.begin_address() - begin_address;
+		const auto register_index = sensor.begin_address() - begin_address;
 		values[i] = sensor.read({
-			registers.begin() + registerIndex,
+			registers.begin() + register_index,
 			sensor.num_registers()
 		});
 	}
 
-	return make_error_code(connector_error::codes::OK);
+	return {};
 }
 }

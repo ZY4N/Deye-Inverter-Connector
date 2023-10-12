@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS "-std=c++20 -Wall -Wextra -Werror -Ofast")
 
 set(DEYE_LIB_PATH "../../lib")
-add_executable(deye_simple_example main.cpp ${DEYE_LIB_PATH}/socket_connection.cpp)
+add_executable(deye_simple_example main.cpp ${DEYE_LIB_PATH}/asio_tcp_socket.cpp)
 target_include_directories(deye_simple_example PRIVATE ${DEYE_LIB_PATH})
 
 find_package(Boost REQUIRED COMPONENTS system)

@@ -1,5 +1,6 @@
 #include <InfluxDBFactory.h>
 #include <deye_connector.hpp>
+#include <asio_tcp_socket.hpp>
 
 #include <vector>
 #include <thread>
@@ -7,10 +8,10 @@
 #include "logger.hpp"
 
 
-static constexpr char* ip = "INVERTER_IP";
+static constexpr char ip[] = "1.1.1.1";
 static constexpr uint16_t port = 8899;
-static constexpr uint32_t serial_number = INVERTER_SERIAL_NUMBER;
-static constexpr char* influxdb_url = "http://localhost:8086?db=solar_inverters";
+static constexpr uint32_t serial_number = 123456;
+static constexpr char influxdb_url[] = "http://localhost:8086?db=my_deye_inverters";
 
 
 using namespace std::chrono_literals;
@@ -26,7 +27,7 @@ void logSensors(
    
 	std::error_code e;
 	
-	deye::connector connector(serial_number);
+	deye::connector<asio_tcp_socket> connector(serial_number);
 	std::vector<double> values(sensors.size());
 	
 	const auto sleep = [&](const auto duration) {

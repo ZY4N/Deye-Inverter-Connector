@@ -1,10 +1,11 @@
 #include <deye_connector.hpp>
+#include <asio_tcp_socket.hpp>
 #include <array>
 #include <iostream>
 
-static constexpr char* ip = "INVERTER_IP";
+static constexpr char ip[] = "1.1.1.1";
 static constexpr uint16_t port = 8899;
-static constexpr uint32_t serial_number = INVERTER_SERIAL_NUMBER;
+static constexpr uint32_t serial_number = 123456;
 
 int main() {
 	constexpr auto my_sensors = std::array{
@@ -17,7 +18,7 @@ int main() {
 	std::array<double, my_sensors.size()> values{};
 	std::error_code error;
 
-	deye::connector connector(serial_number);
+	deye::connector<asio_tcp_socket> connector(serial_number);
 
 	if ((error = connector.connect(ip, port))) {
 		std::cout << "Error while connecting: " << error.message() << std::endl;
