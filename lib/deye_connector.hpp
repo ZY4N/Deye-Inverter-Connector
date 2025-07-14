@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <numeric>
 #include <ratio>
+#include <iostream> 
 
 // The deye modbus protocoll sends two checksums on top of the TCP connection.
 // Since TCP has it's own error correction these checksums don't need to be checked
@@ -660,7 +661,7 @@ std::error_code connector<Socket>::receive_modbus_frame(F&& read_request) {
 
 	const auto returned_serial_number = bytes::to<uint32_t, bytes::endianness::LITTLE>(&m_buffer[7]);
 	if (returned_serial_number != m_serial_number) {
-		// std::cout << m_serial_number << ' ' << returned_serial_number << std::endl;
+		std::cout << "[deye_connector] Expected: " << m_serial_number << " but got: " << returned_serial_number << std::endl;
 		return make_error_code(connector_error::codes::DEVICE_ADDRESS_MISMATCH);
 	}
 

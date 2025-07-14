@@ -1,5 +1,7 @@
 #include "asio_tcp_socket.hpp"
 
+#include <boost/asio/ip/address.hpp>
+
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 
@@ -10,11 +12,11 @@ std::error_code asio_tcp_socket::connect(const char* host, const uint16_t port) 
 	using namespace std::chrono_literals;
 	boost::system::error_code error;
 
-	if (not ctx.stopped() and (error = disconnect())) {
+	if (not ctx.stopped() and socket.is_open() and (error = disconnect())) {
 		return error;
 	}
 
-	const auto ip = asio::ip::address::from_string(host, error);
+	const auto ip = asio::ip::make_address(host, error);
 	if (error) return error;
 
 	ctx.restart();

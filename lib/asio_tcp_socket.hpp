@@ -5,6 +5,7 @@
 #include <span>
 
 #include <boost/asio.hpp>
+#include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ts/internet.hpp>
 
 class asio_tcp_socket {
@@ -24,6 +25,6 @@ public:
 	~asio_tcp_socket();
 
 private:
-	boost::asio::io_service ctx;
+	boost::asio::io_context ctx;
 	boost::asio::ip::tcp::socket socket;
 };
