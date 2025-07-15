@@ -1,3 +1,9 @@
+/*
+ * Copyright (C) 2025 ZY4N <me@zy4n.com>
+ *
+ * Licensed under GPLv2, see file LICENSE in this source tree.
+ */
+
 #include <deye_connector.hpp>
 #include <asio_tcp_socket.hpp>
 #include <array>

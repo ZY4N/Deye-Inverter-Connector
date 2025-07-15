@@ -1,3 +1,10 @@
+/*
+* Copyright (C) 2025 ZY4N <me@zy4n.com>
+ *
+ * Licensed under GPLv2, see file LICENSE in this source tree.
+ */
+
+
 #include "asio_tcp_socket.hpp"
 
 #include <boost/asio/ip/address.hpp>
