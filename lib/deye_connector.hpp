@@ -220,8 +220,8 @@ struct sensor_value
 
 	[[nodiscard]] inline sensor_value_rep_id type() const;
 
-	template<sensor_value_rep_id T>
-	[[nodiscard]] auto get() const;
+	template<class T>
+	[[nodiscard]] std::optional<T> get() const;
 
 	template<class... F>
 	auto visit(F&&... visitors);
@@ -269,8 +269,8 @@ struct sensor_value_rep
 
 	[[nodiscard]] sensor_value_rep_id type() const;
 
-	template<sensor_value_rep_id T>
-	[[nodiscard]] auto get() const;
+	template<class T>
+	[[nodiscard]] std::optional<T> get() const;
 
 	[[nodiscard]] std::expected<sensor_value, std::error_code> interpret(std::span<const std::uint16_t> registers) const;
 
@@ -357,44 +357,14 @@ inline deye::sensor_value_rep_id deye::sensor_value_rep::type() const
 	return static_cast<sensor_value_rep_id>(m_data.index() + 1);
 }
 
-template<>
-inline auto deye::sensor_value_rep::get<deye::sensor_value_rep_id::registers>() const
+template<class T>
+inline std::optional<T> deye::sensor_value_rep::get() const
 {
-	if (const auto ptr = std::get_if<registers>(&m_data); ptr != nullptr)
+	if (const auto ptr = std::get_if<T>(&m_data); ptr != nullptr)
 	{
-		return std::optional{ *ptr };
+		return *ptr;
 	}
-	return std::optional<registers>{ std::nullopt };
-}
-
-template<>
-inline auto deye::sensor_value_rep::get<deye::sensor_value_rep_id::integer>() const
-{
-	if (const auto ptr = std::get_if<integer>(&m_data); ptr != nullptr)
-	{
-		return std::optional{ *ptr };
-	}
-	return std::optional<integer>{ std::nullopt };
-}
-
-template<>
-inline auto deye::sensor_value_rep::get<deye::sensor_value_rep_id::physical>() const
-{
-	if (const auto ptr = std::get_if<physical>(&m_data); ptr != nullptr)
-	{
-		return std::optional{ *ptr };
-	}
-	return std::optional<physical>{ std::nullopt };
-}
-
-template<>
-inline auto deye::sensor_value_rep::get<deye::sensor_value_rep_id::enumeration>() const
-{
-	if (const auto ptr = std::get_if<enumeration>(&m_data); ptr != nullptr)
-	{
-		return std::optional{ *ptr };
-	}
-	return std::optional<enumeration>{ std::nullopt };
+	return std::nullopt;
 }
 
 inline std::expected<deye::sensor_value, std::error_code> deye::sensor_value_rep::interpret(
@@ -475,34 +445,14 @@ deye::sensor_value_rep_id deye::sensor_value::type() const
 	return static_cast<sensor_value_rep_id>(m_data.index());
 }
 
-template<>
-inline auto deye::sensor_value::get<deye::sensor_value_rep_id::integer>() const
+template<class T>
+std::optional<T> deye::sensor_value::get() const
 {
-	if (const auto ptr = std::get_if<integer>(&m_data); ptr != nullptr)
+	if (const auto ptr = std::get_if<T>(&m_data); ptr != nullptr)
 	{
-		return std::optional{ *ptr };
+		return *ptr;
 	}
-	return std::optional<integer>{ std::nullopt };
-}
-
-template<>
-inline auto deye::sensor_value::get<deye::sensor_value_rep_id::physical>() const
-{
-	if (const auto ptr = std::get_if<physical>(&m_data); ptr != nullptr)
-	{
-		return std::optional{ *ptr };
-	}
-	return std::optional<physical>{ std::nullopt };
-}
-
-template<>
-inline auto deye::sensor_value::get<deye::sensor_value_rep_id::enumeration>() const
-{
-	if (const auto ptr = std::get_if<enumeration>(&m_data); ptr != nullptr)
-	{
-		return std::optional{ *ptr };
-	}
-	return std::optional<enumeration>{ std::nullopt };
+	return std::nullopt;
 }
 
 template<class... F>
@@ -1218,13 +1168,12 @@ template<deye::detail::tcp_socket Socket>
 ) {
 	using connector_error::make_error_code;
 
-	if (const auto sensor_meta_opt = sensor_meta_by_id(id))
+	if (const auto sensor_meta = sensor_meta_by_id(id))
 	{
-		const auto sensor_meta = *sensor_meta;
 		if (const auto registers = read_registers(
-			sensor_meta.begin_address, sensor_meta.register_count
+			sensor_meta->begin_address, sensor_meta->register_count
 		)) {
-			if (const auto value = sensor_meta.rep.value(registers.value()))
+			if (const auto value = sensor_meta->rep.interpret(registers.value()))
 			{
 				return value.value();
 			}

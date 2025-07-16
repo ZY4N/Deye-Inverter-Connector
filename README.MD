@@ -58,25 +58,12 @@ int main()
 					registers.data.data(),
 					sensor_meta.register_count
 				};
-				if (sensor_id == deye::config::sensor_id::inverter_id)
-				{
-					std::cout << '"';
-					for (const auto& reg : register_view)
-					{
-						std::cout << static_cast<char>(reg & 0xff);
-						std::cout << static_cast<char>((reg >> 8) & 0xff);
-					}
-					std::cout << '"';
-				}
-				else
-				{
-					std::cout << std::hex << "[ ";
-					for (const auto& reg : register_view)
-					{
-						std::cout << "0x" << static_cast<int>(reg) << ' ';
-					}
-					std::cout << "]" << std::dec;
-				}
+                std::cout << std::hex << "[ ";
+                for (const auto& reg : register_view)
+                {
+                    std::cout << "0x" << static_cast<int>(reg) << ' ';
+                }
+                std::cout << "]" << std::dec;
 			},
 			[&](const deye::sensor_value::integer& integer)
 			{

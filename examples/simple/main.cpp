@@ -17,7 +17,7 @@ int main()
 	using enum deye::config::sensor_id;
 
 	constexpr auto my_sensors = std::array{
-		inverter_id, control_board_version_num, communication_board_version_num,
+		control_board_version_num, communication_board_version_num,
 		running_status, production_today, uptime,
 		total_grid_production, pv1_production_today, pv2_production_today,
 		pv3_production_today, pv4_production_today, pv1_production_total,
@@ -33,9 +33,31 @@ int main()
 
 	deye::connector<asio_tcp_socket> connector(serial_number);
 
+	std::cout << "Connecting to " << ip << ':' << port << "...\n";
 	if (const auto error = connector.connect(ip, port))
 	{
 		std::cerr << "Error while connecting: " << error.message() << std::endl;
+		return EXIT_FAILURE;
+	}
+	std::cout << "Successfully Connected!\n";
+
+	if (const auto sensor_value = connector.read_sensor(inverter_id))
+	{
+		const auto sensor_meta = *deye::sensor_meta_by_id(inverter_id);
+		const auto register_data = sensor_value.value().get<deye::sensor_value::registers>()->data;
+		const auto register_view = std::span{ register_data.data(), sensor_meta.register_count };
+
+		std::cout << "Inverter ID: \"";
+		for (const auto& reg : register_view)
+		{
+			std::cout << static_cast<char>(reg & 0xff);
+			std::cout << static_cast<char>((reg >> 8) & 0xff);
+		}
+		std::cout << "\"\n";
+	}
+	else
+	{
+		std::cerr << "Error while reading Inverter ID: " << sensor_value.error().message() << std::endl;
 		return EXIT_FAILURE;
 	}
 
@@ -58,25 +80,12 @@ int main()
 					registers.data.data(),
 					sensor_meta.register_count
 				};
-				if (sensor_id == deye::config::sensor_id::inverter_id)
+				std::cout << std::hex << "[ ";
+				for (const auto& reg : register_view)
 				{
-					std::cout << '"';
-					for (const auto& reg : register_view)
-					{
-						std::cout << static_cast<char>(reg & 0xff);
-						std::cout << static_cast<char>((reg >> 8) & 0xff);
-					}
-					std::cout << '"';
+					std::cout << "0x" << static_cast<int>(reg) << ' ';
 				}
-				else
-				{
-					std::cout << std::hex << "[ ";
-					for (const auto& reg : register_view)
-					{
-						std::cout << "0x" << static_cast<int>(reg) << ' ';
-					}
-					std::cout << "]" << std::dec;
-				}
+				std::cout << "]" << std::dec;
 			},
 			[&](const deye::sensor_value::integer& integer)
 			{
@@ -96,7 +105,7 @@ int main()
 			}
 		);
 
-		std::cout << std::endl;
+		std::cout << '\n';
 	}
 
 	return EXIT_SUCCESS;
