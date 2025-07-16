@@ -177,12 +177,23 @@ namespace config
 
 enum class sensor_value_rep_id : std::uint8_t
 {
-	integer, physical, enumeration, empty
+	empty = 0,
+	registers = 1,
+	integer = 2,
+	physical = 3,
+	enumeration = 4,
+	COUNT = 5
 };
 
 struct sensor_value
 {
-	struct empty {};
+	using empty = std::monostate;
+
+	struct registers
+	{
+		static constexpr std::size_t max_size = 8;
+		std::array<std::uint16_t, max_size> data{};
+	};
 
 	struct integer
 	{
@@ -202,9 +213,10 @@ struct sensor_value
 	};
 
 	constexpr sensor_value();
-	constexpr sensor_value(integer rep);
-	constexpr sensor_value(physical rep);
-	constexpr sensor_value(enumeration rep);
+	constexpr sensor_value(registers value);
+	constexpr sensor_value(integer value);
+	constexpr sensor_value(physical value);
+	constexpr sensor_value(enumeration value);
 
 	[[nodiscard]] inline sensor_value_rep_id type() const;
 
@@ -219,15 +231,21 @@ struct sensor_value
 
 private:
 	std::variant<
+		empty,
+		registers,
 		integer,
 		physical,
-		enumeration,
-		empty
+		enumeration
 	> m_data;
 };
 
 struct sensor_value_rep
 {
+	struct registers
+	{
+		static constexpr auto max_size = sensor_value::registers::max_size;
+	};
+
 	struct integer
 	{
 		std::int32_t scale, offset;
@@ -244,6 +262,7 @@ struct sensor_value_rep
 		config::enumeration_id enum_id;
 	};
 
+	constexpr sensor_value_rep(registers rep);
 	constexpr sensor_value_rep(integer rep);
 	constexpr sensor_value_rep(physical rep);
 	constexpr sensor_value_rep(enumeration rep);
@@ -257,6 +276,7 @@ struct sensor_value_rep
 
 private:
 	std::variant<
+		registers,
 		integer,
 		physical,
 		enumeration
@@ -326,13 +346,25 @@ private:
 
 //====================[ implementations ]====================//
 
+constexpr deye::sensor_value_rep::sensor_value_rep(registers rep) : m_data{ std::move(rep) } {}
 constexpr deye::sensor_value_rep::sensor_value_rep(integer rep) : m_data{ std::move(rep) } {}
 constexpr deye::sensor_value_rep::sensor_value_rep(physical rep) : m_data{ std::move(rep) } {}
 constexpr deye::sensor_value_rep::sensor_value_rep(enumeration rep) : m_data{ std::move(rep) } {}
 
 inline deye::sensor_value_rep_id deye::sensor_value_rep::type() const
 {
-	return static_cast<sensor_value_rep_id>(m_data.index());
+	// To match up with the id enum the "empty" value of `sensor_value` is skipped.
+	return static_cast<sensor_value_rep_id>(m_data.index() + 1);
+}
+
+template<>
+inline auto deye::sensor_value_rep::get<deye::sensor_value_rep_id::registers>() const
+{
+	if (const auto ptr = std::get_if<registers>(&m_data); ptr != nullptr)
+	{
+		return std::optional{ *ptr };
+	}
+	return std::optional<registers>{ std::nullopt };
 }
 
 template<>
@@ -366,22 +398,37 @@ inline auto deye::sensor_value_rep::get<deye::sensor_value_rep_id::enumeration>(
 }
 
 inline std::expected<deye::sensor_value, std::error_code> deye::sensor_value_rep::interpret(
-	std::span<const std::uint16_t> registers
+	std::span<const std::uint16_t> raw_registers
 ) const {
 	auto integer_value = std::uint64_t{};
 
-	if (registers.size() > sizeof(integer_value))
+	if (type() == sensor_value_rep_id::registers)
 	{
-		return std::unexpected{ std::make_error_code(std::errc::result_out_of_range) };
+		if (raw_registers.size() > registers::max_size)
+		{
+			return std::unexpected{ std::make_error_code(std::errc::result_out_of_range) };
+		}
 	}
-
-	std::memcpy(&integer_value, registers.data(), std::min(sizeof(integer_value), registers.size()));
+	else
+	{
+		if (raw_registers.size_bytes() > sizeof(integer_value))
+		{
+			return std::unexpected{ std::make_error_code(std::errc::result_out_of_range) };
+		}
+		std::memcpy(&integer_value, raw_registers.data(), std::min(sizeof(integer_value), raw_registers.size()));
+	}
 
 	return std::visit(
 		detail::overloaded_lambda{
+			[&](const registers&) -> sensor_value
+			{
+				auto value = sensor_value::registers{};
+				std::ranges::copy(raw_registers, value.data.begin());
+				return { value };
+			},
 			[&](const integer& rep) -> sensor_value
 			{
-				auto value = static_cast<std::int32_t>(integer_value);
+				auto value = static_cast<std::int64_t>(integer_value);
 				value *= rep.scale;
 				value += rep.offset;
 				return {
@@ -418,9 +465,10 @@ inline std::expected<deye::sensor_value, std::error_code> deye::sensor_value_rep
 }
 
 constexpr deye::sensor_value::sensor_value() : m_data{ empty{} } {}
-constexpr deye::sensor_value::sensor_value(integer rep) : m_data{ std::move(rep) } {}
-constexpr deye::sensor_value::sensor_value(enumeration rep) : m_data{ std::move(rep) } {}
-constexpr deye::sensor_value::sensor_value(physical rep) : m_data{ std::move(rep) } {}
+constexpr deye::sensor_value::sensor_value(registers value) : m_data{ std::move(value) } {}
+constexpr deye::sensor_value::sensor_value(integer value) : m_data{ std::move(value) } {}
+constexpr deye::sensor_value::sensor_value(enumeration value) : m_data{ std::move(value) } {}
+constexpr deye::sensor_value::sensor_value(physical value) : m_data{ std::move(value) } {}
 
 deye::sensor_value_rep_id deye::sensor_value::type() const
 {
@@ -496,6 +544,7 @@ enum class codes
 	unknown_response_code,
 	response_invalid_start,
 	response_invalid_end,
+	response_wrong_checksum,
 	response_wrong_crc,
 	response_wrong_address,
 	response_wrong_register_count,
@@ -529,6 +578,8 @@ struct category : std::error_category
 			return "Response frame has invalid starting byte";
 		case codes::response_invalid_end:
 			return "Response frame has invalid ending byte";
+		case codes::response_wrong_checksum:
+			return "Response frame checksum is not valid.";
 		case codes::response_wrong_crc:
 			return "Response frame crc is not valid.";
 		case codes::response_wrong_address:
@@ -620,7 +671,7 @@ constexpr std::uint16_t deye::detail::modbus::crc(std::span<const std::uint8_t> 
 {
 	std::uint16_t crc = 0xFFFF;
 
-	for (const auto &byte : data)
+	for (const auto& byte : data)
 	{
 		crc ^= static_cast<std::uint16_t>(byte);
 
@@ -807,7 +858,8 @@ std::error_code deye::connector<Socket>::send_modbus_frame(std::size_t data_size
 		return error;
 	}
 
-	const auto checksum = detail::modbus::checksum(frame.subspan(1, offset - 1));
+	static constexpr auto ignore_start_byte = sizeof(std::uint8_t);
+	const auto checksum = detail::modbus::checksum(frame.subspan(ignore_start_byte, offset - ignore_start_byte));
 
 	if (std::error_code error;
 	    ((error = bytes::from<std::uint8_t , std::endian::little>(checksum,	frame, &offset))) or // checksum placeholder
@@ -850,7 +902,7 @@ std::error_code deye::connector<Socket>::receive_modbus_frame(F&& read_request)
 
 	if (header.front() != 0xa5)
 	{
-		return make_error_code(connector_error::codes::response_invalid_start);
+		return make_error_code(codes::response_invalid_start);
 	}
 
 	namespace bytes = detail::bytes;
@@ -925,19 +977,29 @@ std::error_code deye::connector<Socket>::receive_modbus_frame(F&& read_request)
 		return make_error_code(codes::response_invalid_end);
 	}
 
-	body = body.subspan(0, body.size() - 1);
+	static constexpr auto ignore_end_byte = sizeof(std::uint8_t);
+	body = body.subspan(0, body.size() - ignore_end_byte);
+
+	static constexpr auto ignore_end_bytes = 2 * sizeof(std::uint8_t);
 
 #ifdef DEYE_REDUNDANT_ERROR_CHECKS
 	const auto expected_checksum = body.back();
-	const auto actual_checksum = std::accumulate(header.begin() + 1, body.end() - 1, std::uint8_t{});
+
+	static constexpr auto ignore_start_byte = sizeof(std::uint8_t);
+	const auto actual_checksum = detail::modbus::checksum(
+		message.subspan(
+			ignore_start_byte,
+			message.size() - ignore_start_byte - ignore_end_bytes
+		)
+	);
 
 	if (expected_checksum != actual_checksum)
 	{
-		return make_error_code(codes::response_wrong_crc);
+		return make_error_code(codes::response_wrong_checksum);
 	}
 #endif
 
-	return read_request({ body.begin() + 14, body.end() - 1 });
+	return read_request({ body.begin() + 14, body.end() - ignore_end_byte });
 }
 
 
@@ -996,7 +1058,8 @@ std::expected<std::span<std::uint16_t>, std::error_code> deye::connector<Socket>
 
 	const auto read_request = [&](std::span<std::uint8_t> res) -> std::error_code
 	{
-		const auto data = res.subspan(0, res.size() - sizeof(std::uint16_t)); // crc is not part of data
+		static constexpr auto ignore_crc_bytes = sizeof(std::uint16_t);
+		const auto data = res.subspan(0, res.size() - ignore_crc_bytes);
 
 #ifdef DEYE_REDUNDANT_ERROR_CHECKS
 		const auto expected_crc = detail::modbus::crc(data);
@@ -1014,22 +1077,26 @@ std::expected<std::span<std::uint16_t>, std::error_code> deye::connector<Socket>
 		}
 #endif
 
-		const auto reg_count_byte = data[2] / sizeof(std::uint16_t);
+		const auto returned_register_byte_count = detail::bytes::to<std::uint8_t, std::endian::big>(data, 2);
+		if (not returned_register_byte_count)
+		{
+			return returned_register_byte_count.error();
+		}
 
-		if (reg_count_byte < register_count)
+		if (returned_register_byte_count.value() / sizeof(std::uint16_t) != register_count)
 		{
 			return make_error_code(connector_error::codes::response_wrong_register_count);
 		}
 
-		static constexpr auto register_offset = 3u;
+		static constexpr auto register_offset = 3 * sizeof(std::uint8_t);
 
-		if (data.size() < register_offset + register_count)
+		if (data.size() < register_offset + register_count * sizeof(std::uint16_t))
 		{
 			return make_error_code(connector_error::codes::response_wrong_register_count);
 		}
 
 		register_view = {
-			reinterpret_cast<std::uint16_t*>(data.data()) + register_offset,
+			reinterpret_cast<std::uint16_t*>(data.data() + register_offset),
 			register_count
 		};
 
@@ -1058,17 +1125,17 @@ std::error_code deye::connector<Socket>::write_registers(std::uint16_t begin_add
 	using connector_error::make_error_code;
 	using connector_error::codes;;
 
-	if (values.size() * sizeof(std::uint16_t) > std::numeric_limits<std::uint8_t>::max())
+	if (values.size_bytes() > std::numeric_limits<std::uint8_t>::max())
 	{
 		return make_error_code(codes::too_many_register_values);
 	}
 
 	const auto request_size = (
-		sizeof(std::uint16_t) +	// header
+		sizeof(std::uint16_t) +	// start bytes
 		sizeof(std::uint16_t) +	// begin address
 		sizeof(std::uint16_t) +	// address count
 		sizeof(std::uint8_t) +	// byte count
-		values.size() * sizeof(std::uint16_t)
+		values.size_bytes()
 	);
 
 	namespace bytes = detail::bytes;
@@ -1077,17 +1144,17 @@ std::error_code deye::connector<Socket>::write_registers(std::uint16_t begin_add
 	{
 		if (req.size() != request_size)
 		{
-			return make_error_code(connector_error::codes::internal_error);
+			return make_error_code(codes::internal_error);
 		}
 
 		auto offset = std::size_t{};
 		if (
 			std::error_code error;
-			((error = bytes::from<std::uint16_t, std::endian::big>(0x1001			, req, &offset))) or
-			((error = bytes::from<std::uint16_t, std::endian::big>(begin_address			, req, &offset))) or
-			((error = bytes::from<std::uint16_t, std::endian::big>(values.size()	, req, &offset))) or
-			((error = bytes::from<std::uint8_t , std::endian::big>(values.size() * sizeof(std::uint16_t), req, &offset))) or
-			((error = bytes::from<std::uint16_t, std::endian::big>(values				, req, &offset)))
+			((error = bytes::from<std::uint16_t, std::endian::big>(0x1001			    , req, &offset))) or
+			((error = bytes::from<std::uint16_t, std::endian::big>(begin_address	    		, req, &offset))) or
+			((error = bytes::from<std::uint16_t, std::endian::big>(values.size()	    , req, &offset))) or
+			((error = bytes::from<std::uint8_t , std::endian::big>(values.size_bytes()	, req, &offset))) or
+			((error = bytes::from<std::uint16_t, std::endian::big>(values					, req, &offset)))
 		) {
 			return error;
 		}
@@ -1098,10 +1165,11 @@ std::error_code deye::connector<Socket>::write_registers(std::uint16_t begin_add
 	const auto read_request = [&](std::span<std::uint8_t> res)
 	{
 #ifdef DEYE_REDUNDANT_ERROR_CHECKS
-		const auto crc_begin = res.end() - sizeof(std::uint16_t);
-		const auto expected_crc = detail::modbus::crc(std::span{ res.begin(), crc_begin });
+		static constexpr auto ignore_crc_bytes = sizeof(std::uint16_t);
+		const auto data = res.subspan(0, res.size() - ignore_crc_bytes);
+		const auto expected_crc = detail::modbus::crc(data);
 
-		if (const auto actual_crc = bytes::to<std::uint16_t, std::endian::little>(res, res.size() - sizeof(std::uint16_t)))
+		if (const auto actual_crc = bytes::to<std::uint16_t, std::endian::little>(res, data.size()))
 		{
 			if (actual_crc != expected_crc)
 			{
@@ -1186,6 +1254,11 @@ std::error_code deye::connector<Socket>::read_sensors(
 	if (sensor_ids.size() != sensor_values.size())
 	{
 		return make_error_code(connector_error::codes::num_sensors_values_mismatch);
+	}
+
+	if (sensor_ids.empty())
+	{
+		return {};
 	}
 
 	using address_limits = std::numeric_limits<std::uint16_t>;

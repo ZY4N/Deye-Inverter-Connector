@@ -24,10 +24,35 @@ struct overloaded : Ts...
 int main()
 {
 	constexpr auto my_sensors = std::array{
-		deye::config::sensor_id::daily_production,
-		deye::config::sensor_id::pv1_voltage,
-		deye::config::sensor_id::pv1_current,
-		deye::config::sensor_id::dc_temperature
+		deye::config::sensor_id::inverter_id,
+		deye::config::sensor_id::control_board_version_num,
+		deye::config::sensor_id::communication_board_version_num,
+		deye::config::sensor_id::running_status,
+		deye::config::sensor_id::production_today,
+		deye::config::sensor_id::uptime,
+		deye::config::sensor_id::total_grid_production,
+		deye::config::sensor_id::pv1_production_today,
+		deye::config::sensor_id::pv2_production_today,
+		deye::config::sensor_id::pv3_production_today,
+		deye::config::sensor_id::pv4_production_today,
+		deye::config::sensor_id::pv1_production_total,
+		deye::config::sensor_id::pv2_production_total,
+		deye::config::sensor_id::phase_1_voltage,
+		deye::config::sensor_id::pv3_production_total,
+		deye::config::sensor_id::daily_energy_bought,
+		deye::config::sensor_id::phase_1_current,
+		deye::config::sensor_id::daily_energy_sold,
+		deye::config::sensor_id::pv4_production_total,
+		deye::config::sensor_id::total_energy_bought,
+		deye::config::sensor_id::ac_frequency,
+		deye::config::sensor_id::operation_power,
+		deye::config::sensor_id::total_energy_sold,
+		deye::config::sensor_id::daily_load_consumption,
+		deye::config::sensor_id::total_load_consumption,
+		deye::config::sensor_id::ac_active_power,
+		deye::config::sensor_id::dc_temperature,
+		deye::config::sensor_id::ac_temperature,
+		deye::config::sensor_id::total_production
 	};
 
 	std::array<deye::sensor_value, my_sensors.size()> values{};
@@ -53,13 +78,22 @@ int main()
 		std::cout << sensor_meta.name << ": ";
 
 		sensor_value.visit(
+			[&](const deye::sensor_value::registers& registers)
+			{
+				std::cout << std::hex << "[ ";
+				for (const auto& reg : registers.data)
+				{
+					std::cout << "0x" << static_cast<int>(reg) << ' ';
+				}
+				std::cout << "]" << std::dec;
+			},
 			[&](const deye::sensor_value::integer& integer)
 			{
-				std::cout << integer.value << std::endl;
+				std::cout << integer.value;
 			},
 			[&](const deye::sensor_value::physical& physical)
 			{
-				std::cout << physical.value << " " << deye::physical_unit_by_id(physical.unit_id)->symbol << std::endl;
+				std::cout << physical.value << " " << deye::physical_unit_by_id(physical.unit_id)->symbol;
 			},
 			[&](const deye::sensor_value::enumeration& enumeration)
 			{
