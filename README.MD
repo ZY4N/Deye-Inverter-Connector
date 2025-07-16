@@ -1,5 +1,5 @@
 # Deye Inverter Connector
-This Header Only* C++20 library provides a simple interface to communicate with deye solar inverters.
+This Header Only* C++23 library provides a simple interface to communicate with deye solar inverters.
 
 *The library relies on an external tcp socket class to keep it platform independent. There are two tcp socket implementations provided, one using boost for desktop PCs/servers and another using lwIP for microcontrollers.
 
