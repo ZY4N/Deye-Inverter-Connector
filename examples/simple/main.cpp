@@ -6,53 +6,27 @@
 
 #include <deye_connector.hpp>
 #include <asio_tcp_socket.hpp>
-#include <array>
 #include <iostream>
 
-static constexpr char ip[] = "192.168.2.22";
+static constexpr char ip[] = "1.1.1.1";
 static constexpr uint16_t port = 8899;
-static constexpr uint32_t serial_number = 4161840362;
-
-
-template<class... Ts>
-struct overloaded : Ts...
-{
-	using Ts::operator()...;
-};
-
+static constexpr uint32_t serial_number = 69420;
 
 int main()
 {
+	using enum deye::config::sensor_id;
+
 	constexpr auto my_sensors = std::array{
-		deye::config::sensor_id::inverter_id,
-		deye::config::sensor_id::control_board_version_num,
-		deye::config::sensor_id::communication_board_version_num,
-		deye::config::sensor_id::running_status,
-		deye::config::sensor_id::production_today,
-		deye::config::sensor_id::uptime,
-		deye::config::sensor_id::total_grid_production,
-		deye::config::sensor_id::pv1_production_today,
-		deye::config::sensor_id::pv2_production_today,
-		deye::config::sensor_id::pv3_production_today,
-		deye::config::sensor_id::pv4_production_today,
-		deye::config::sensor_id::pv1_production_total,
-		deye::config::sensor_id::pv2_production_total,
-		deye::config::sensor_id::phase_1_voltage,
-		deye::config::sensor_id::pv3_production_total,
-		deye::config::sensor_id::daily_energy_bought,
-		deye::config::sensor_id::phase_1_current,
-		deye::config::sensor_id::daily_energy_sold,
-		deye::config::sensor_id::pv4_production_total,
-		deye::config::sensor_id::total_energy_bought,
-		deye::config::sensor_id::ac_frequency,
-		deye::config::sensor_id::operation_power,
-		deye::config::sensor_id::total_energy_sold,
-		deye::config::sensor_id::daily_load_consumption,
-		deye::config::sensor_id::total_load_consumption,
-		deye::config::sensor_id::ac_active_power,
-		deye::config::sensor_id::dc_temperature,
-		deye::config::sensor_id::ac_temperature,
-		deye::config::sensor_id::total_production
+		inverter_id, control_board_version_num, communication_board_version_num,
+		running_status, production_today, uptime,
+		total_grid_production, pv1_production_today, pv2_production_today,
+		pv3_production_today, pv4_production_today, pv1_production_total,
+		pv2_production_total, phase_1_voltage, pv3_production_total,
+		daily_energy_bought, phase_1_current, daily_energy_sold,
+		pv4_production_total, total_energy_bought, ac_frequency,
+		operation_power, total_energy_sold, daily_load_consumption,
+		total_load_consumption, ac_active_power, dc_temperature,
+		ac_temperature, total_production
 	};
 
 	std::array<deye::sensor_value, my_sensors.size()> values{};
@@ -80,12 +54,29 @@ int main()
 		sensor_value.visit(
 			[&](const deye::sensor_value::registers& registers)
 			{
-				std::cout << std::hex << "[ ";
-				for (const auto& reg : registers.data)
+				const auto register_view = std::span{
+					registers.data.data(),
+					sensor_meta.register_count
+				};
+				if (sensor_id == deye::config::sensor_id::inverter_id)
 				{
-					std::cout << "0x" << static_cast<int>(reg) << ' ';
+					std::cout << '"';
+					for (const auto& reg : register_view)
+					{
+						std::cout << static_cast<char>(reg & 0xff);
+						std::cout << static_cast<char>((reg >> 8) & 0xff);
+					}
+					std::cout << '"';
 				}
-				std::cout << "]" << std::dec;
+				else
+				{
+					std::cout << std::hex << "[ ";
+					for (const auto& reg : register_view)
+					{
+						std::cout << "0x" << static_cast<int>(reg) << ' ';
+					}
+					std::cout << "]" << std::dec;
+				}
 			},
 			[&](const deye::sensor_value::integer& integer)
 			{
